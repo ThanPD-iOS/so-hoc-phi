@@ -181,7 +181,7 @@ const steps = (n) => `<div class="steps">${[1, 2, 3].map((i) => `<i class="${i <
 function installHtml(inSetup) {
   return `
     ${inSetup ? '<p class="eb">Sổ học phí</p>' : back("Cài đặt")}
-    <h1>${inSetup ? "Thêm app ra màn hình chính trước đã" : "Cách cài lên màn hình chính"}</h1>
+    <h1>${inSetup ? "Thêm app ra màn hình chính nha" : "Cách cài lên màn hình chính"}</h1>
     ${!inSetup && isStandalone() ? '<p class="hint">Cô đang mở app từ màn hình chính rồi, không cần cài lại.</p>' : ""}
     <div class="card">
       <div class="li"><span class="num">1</span><span>Mở link app bằng <b>Safari</b>, bấm nút <b>Chia sẻ</b> <span class="share-ic">⇪</span> ở thanh dưới</span></div>

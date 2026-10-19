@@ -1,5 +1,5 @@
 // Offline cache for the app shell. Bump VERSION on every deploy so phones pick up the new files on the next launch.
-const VERSION = "1.1.0";
+const VERSION = "1.1.1";
 const SHELL = `shell-${VERSION}`;
 const FONTS = "fonts";
 const FILES = [

@@ -25,7 +25,7 @@ const eq = (a, b, msg = "") => {
 const TODAY = "2026-10-13";
 function sample() {
   const s = M.emptyState(TODAY);
-  s.settings.slipTitle = "Lớp Toán cô Phượng";
+  s.settings.slipTitle = "Lớp Tiếng Anh cô Phượng";
   M.addClass(s, { name: "Lớp 6", price: 250000, days: [2], startDate: "2026-10-01", students: ["Minh An", "Gia Huy"] });
   M.addClass(s, { name: "Lớp 7", price: 250000, days: [5], startDate: "2026-10-01", students: ["Bảo Ngọc", "Khánh Linh", "Thảo Vy"] });
   M.generate(s, TODAY);

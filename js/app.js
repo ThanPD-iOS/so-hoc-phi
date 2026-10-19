@@ -509,7 +509,7 @@ function settingsView() {
       <p class="eb">Cài đặt</p><h1>Cài đặt</h1>
       <div class="list">
         <button data-act="open" data-page="classes"><span>Lớp học</span><small>${active.length} lớp · ${M.currentStudents(state, today).length} em</small></button>
-        <label class="row-in"><span>Tên trên phiếu</span><input data-change="slipTitle" type="text" enterkeyhint="done" maxlength="60" placeholder="Ví dụ: Lớp Toán cô Phượng" value="${esc(state.settings.slipTitle)}"></label>
+        <label class="row-in"><span>Tên trên phiếu</span><input data-change="slipTitle" type="text" enterkeyhint="done" maxlength="60" placeholder="Ví dụ: Lớp Tiếng Anh cô Phượng" value="${esc(state.settings.slipTitle)}"></label>
       </div>
       <div class="list">
         <button data-act="open" data-page="backup"><span>Sao lưu dữ liệu</span><small>${last ? D.fmtDMY(last) : "Chưa sao lưu"}</small></button>

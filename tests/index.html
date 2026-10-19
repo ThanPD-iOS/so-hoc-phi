@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="vi">
+<head><meta charset="utf-8"><title>Sổ học phí · tests</title>
+<style>body{font:14px/1.5 system-ui;margin:20px}.fail{color:#c00}.pass{color:#080}pre{white-space:pre-wrap}</style></head>
+<body>
+<h1>Tests</h1>
+<pre id="out">running…</pre>
+<script type="module">
+// Uses the example from Docs/flow.html: today Tue 13/10/2026, Lớp 6 on T3, Lớp 7 on T6, both 250.000đ.
+import * as D from "../js/date.js";
+import * as M from "../js/model.js";
+import { monthSheets } from "../js/export.js";
+import { buildXlsx } from "../js/xlsx.js";
+
+const results = [];
+const test = (name, fn) => {
+  try { fn(); results.push(["pass", name]); }
+  catch (e) { results.push(["fail", `${name}\n    ${e.message}`]); }
+};
+const eq = (a, b, msg = "") => {
+  const A = JSON.stringify(a), B = JSON.stringify(b);
+  if (A !== B) throw new Error(`${msg} expected ${B}, got ${A}`);
+};
+
+const TODAY = "2026-10-13";
+function sample() {
+  const s = M.emptyState(TODAY);
+  s.settings.slipTitle = "Lớp Toán cô Phượng";
+  M.addClass(s, { name: "Lớp 6", price: 250000, days: [2], startDate: "2026-10-01", students: ["Minh An", "Gia Huy"] });
+  M.addClass(s, { name: "Lớp 7", price: 250000, days: [5], startDate: "2026-10-01", students: ["Bảo Ngọc", "Khánh Linh", "Thảo Vy"] });
+  M.generate(s, TODAY);
+  return s;
+}
+const stu = (s, name) => s.students.find((x) => x.name === name);
+const cls = (s, name) => s.classes.find((x) => x.name === name);
+
+test("dates: weekdays and months", () => {
+  eq(D.weekday("2026-10-13"), 2);
+  eq(D.weekday("2026-10-01"), 4);
+  eq(D.monthEnd("2026-02"), "2026-02-28");
+  eq(D.addMonths("2026-01", -1), "2025-12");
+  eq(D.fmtLong("2026-10-13"), "Thứ 3, 13/10/2026");
+  eq(D.diffDays("2026-10-10", "2026-10-13"), 3);
+  eq(D.isISO("2026-02-30"), false);
+});
+
+test("money format", () => {
+  eq(M.fmtMoney(250000), "250.000đ");
+  eq(M.fmtMoney(2250000), "2.250.000đ");
+  eq(M.parsePrice("250.000"), 250000);
+});
+
+test("A4: 4 sessions from 01/10 to today (Lớp 6: 2, Lớp 7: 2)", () => {
+  const s = sample();
+  eq(s.sessions.map((x) => `${cls(s, "Lớp 6").id === x.classId ? 6 : 7}:${x.date}`).sort(),
+    ["6:2026-10-06", "6:2026-10-13", "7:2026-10-02", "7:2026-10-09"]);
+  eq(M.countScheduled([2], "2026-10-01", TODAY) + M.countScheduled([5], "2026-10-01", TODAY), 4);
+});
+
+test("generate is idempotent and fills days the app was not opened", () => {
+  const s = sample();
+  eq(M.generate(s, TODAY), 0);
+  eq(M.generate(s, "2026-10-21"), 2); // 16/10 (T6) and 20/10 (T3)
+  eq(M.generate(s, "2026-10-21"), 0);
+});
+
+test("C1/D1: Khánh Linh absent 09/10 pays 1 buổi in October", () => {
+  const s = sample();
+  const l7 = cls(s, "Lớp 7");
+  eq(M.toggleAbsent(s, l7.id, "2026-10-09", stu(s, "Khánh Linh").id, TODAY), true);
+  const p = M.slip(s, stu(s, "Khánh Linh").id, "2026-10", TODAY);
+  eq(p.count, 1); eq(p.total, 250000); eq(p.absences, ["2026-10-09"]); eq(p.partial, true); eq(p.price, 250000);
+  eq(M.toggleAbsent(s, l7.id, "2026-10-09", stu(s, "Khánh Linh").id, TODAY), false);
+  eq(M.slip(s, stu(s, "Khánh Linh").id, "2026-10", TODAY).count, 2);
+});
+
+test("D3: Excel summary totals 9 buổi, 2.250.000đ", () => {
+  const s = sample();
+  M.toggleAbsent(s, cls(s, "Lớp 7").id, "2026-10-09", stu(s, "Khánh Linh").id, TODAY);
+  const { sheets } = monthSheets(s, "2026-10", TODAY);
+  eq(sheets.map((x) => x.name), ["Tổng hợp", "Lớp 6", "Lớp 7"]);
+  const total = sheets[0].rows.at(-1);
+  eq(total[3].v, 9); eq(total[4].v, 2250000);
+  eq(sheets[2].rows[2], ["09/10/2026", "T6", "x", "Nghỉ", "x"]);
+});
+
+test("C3: pre-marked absence stores a future session; unmarking removes it", () => {
+  const s = sample();
+  const l7 = cls(s, "Lớp 7");
+  M.toggleAbsent(s, l7.id, "2026-10-16", stu(s, "Bảo Ngọc").id, TODAY);
+  eq(M.dayStatus(s, l7, "2026-10-16", TODAY), "planned");
+  eq(!!M.sessionAt(s, l7.id, "2026-10-16"), true);
+  M.toggleAbsent(s, l7.id, "2026-10-16", stu(s, "Bảo Ngọc").id, TODAY);
+  eq(M.sessionAt(s, l7.id, "2026-10-16"), undefined);
+  eq(M.dayStatus(s, l7, "2026-10-16", TODAY), "planned");
+});
+
+test("C3 then generation: pre-marked absence is kept when the day arrives", () => {
+  const s = sample();
+  const l7 = cls(s, "Lớp 7");
+  M.toggleAbsent(s, l7.id, "2026-10-16", stu(s, "Bảo Ngọc").id, TODAY);
+  M.generate(s, "2026-10-16");
+  eq(M.sessionAt(s, l7.id, "2026-10-16").absent, [stu(s, "Bảo Ngọc").id]);
+  eq(M.slip(s, stu(s, "Bảo Ngọc").id, "2026-10", "2026-10-16").count, 2);
+});
+
+test("F2: schedule change drops pre-marked future sessions not in the new schedule", () => {
+  const s = sample();
+  const l7 = cls(s, "Lớp 7");
+  M.toggleAbsent(s, l7.id, "2026-10-16", stu(s, "Bảo Ngọc").id, TODAY);
+  eq(M.daysChangeEffect(s, l7.id, [2], TODAY).map((x) => x.date), ["2026-10-16"]);
+  M.setDays(s, l7.id, [2], TODAY); // T6 -> T3; today is T3 so today's session starts now
+  eq(M.sessionAt(s, l7.id, "2026-10-16"), undefined);
+  eq(!!M.sessionAt(s, l7.id, TODAY), true);
+  M.generate(s, "2026-10-31");
+  eq(M.slip(s, stu(s, "Thảo Vy").id, "2026-10", "2026-10-31").rows.map((r) => r.date),
+    ["2026-10-02", "2026-10-09", "2026-10-13", "2026-10-20", "2026-10-27"]);
+});
+
+test("F1: future price change keeps 250k until 31/10, 280k from 01/11", () => {
+  const s = sample();
+  const l6 = cls(s, "Lớp 6");
+  M.setPrice(s, l6.id, "2026-11-01", 280000);
+  eq(M.priceChangeEffect(s, l6.id, "2026-11-01", 280000, TODAY).count, 0);
+  M.generate(s, "2026-11-10");
+  const oct = M.slip(s, stu(s, "Minh An").id, "2026-10", "2026-11-10");
+  const nov = M.slip(s, stu(s, "Minh An").id, "2026-11", "2026-11-10");
+  eq(oct.rows.map((r) => r.price), [250000, 250000, 250000, 250000]);
+  eq(nov.rows.map((r) => r.price), [280000, 280000]);
+  eq(cls(s, "Lớp 7").prices.length, 1, "other class unchanged");
+});
+
+test("F1: past price change rewrites held sessions and reports it", () => {
+  const s = sample();
+  const l6 = cls(s, "Lớp 6");
+  const eff = M.priceChangeEffect(s, l6.id, "2026-10-06", 280000, TODAY);
+  eq(eff, { count: 2, first: "2026-10-06" });
+  M.setPrice(s, l6.id, "2026-10-06", 280000);
+  eq(M.slip(s, stu(s, "Gia Huy").id, "2026-10", TODAY).total, 560000);
+});
+
+test("F1: mixed prices in one month", () => {
+  const s = sample();
+  const l6 = cls(s, "Lớp 6");
+  M.setPrice(s, l6.id, "2026-10-10", 280000);
+  const p = M.slip(s, stu(s, "Minh An").id, "2026-10", TODAY);
+  eq(p.mixed, true); eq(p.price, null); eq(p.total, 530000);
+  M.removePrice(s, l6.id, "2026-10-10");
+  eq(M.slip(s, stu(s, "Minh An").id, "2026-10", TODAY).total, 500000);
+});
+
+test("B4: cancel a session; generation does not recreate it; re-adding works", () => {
+  const s = sample();
+  const l6 = cls(s, "Lớp 6");
+  M.cancelSession(s, l6.id, TODAY);
+  eq(M.dayStatus(s, l6, TODAY, TODAY), "cancelled");
+  M.generate(s, TODAY);
+  eq(M.sessionAt(s, l6.id, TODAY), undefined);
+  eq(M.addableClasses(s, TODAY, TODAY).map((c) => c.name), ["Lớp 6", "Lớp 7"], "Lớp 6 to re-add, Lớp 7 as an extra");
+  M.addSession(s, l6.id, TODAY, TODAY);
+  eq(M.dayStatus(s, l6, TODAY, TODAY), "held");
+});
+
+test("C2: extra session on a non-scheduled day counts only enrolled students", () => {
+  const s = sample();
+  const l7 = cls(s, "Lớp 7");
+  const newStu = M.addStudent(s, l7.id, "Phương Anh", "2026-10-13");
+  M.addSession(s, l7.id, "2026-10-12", TODAY);
+  eq(M.sessionAt(s, l7.id, "2026-10-12").extra, true);
+  eq(M.slip(s, newStu.id, "2026-10", TODAY).count, 0);
+  eq(M.slip(s, stu(s, "Thảo Vy").id, "2026-10", TODAY).count, 3);
+});
+
+test("E5: student leaving from a date stops counting from that date", () => {
+  const s = sample();
+  const vy = stu(s, "Thảo Vy");
+  M.updateStudent(s, vy.id, { name: "Thảo Vy", from: vy.from, until: "2026-10-09" });
+  eq(M.slip(s, vy.id, "2026-10", TODAY).count, 1);
+  eq(M.slipStudents(s, cls(s, "Lớp 7").id, "2026-11").map((x) => x.name), ["Bảo Ngọc", "Khánh Linh"]);
+});
+
+test("D1: student enrolled but absent all month still gets a 0đ slip", () => {
+  const s = sample();
+  const l6 = cls(s, "Lớp 6");
+  const huy = stu(s, "Gia Huy");
+  M.toggleAbsent(s, l6.id, "2026-10-06", huy.id, TODAY);
+  M.toggleAbsent(s, l6.id, "2026-10-13", huy.id, TODAY);
+  eq(M.slipStudents(s, l6.id, "2026-10").some((x) => x.id === huy.id), true);
+  eq(M.slip(s, huy.id, "2026-10", TODAY).total, 0);
+});
+
+test("E3: stopped class creates no sessions and stops counting", () => {
+  const s = sample();
+  const l7 = cls(s, "Lớp 7");
+  M.stopClass(s, l7.id, "2026-10-14");
+  M.generate(s, "2026-10-31");
+  eq(s.sessions.filter((x) => x.classId === l7.id).length, 2);
+  eq(M.isStopped(l7, "2026-10-31"), true);
+  eq(M.slipStudents(s, l7.id, "2026-11").length, 0);
+  eq(M.addableClasses(s, "2026-10-20", "2026-10-31").map((c) => c.name), []);
+});
+
+test("E2: class added later with a past start date backfills its sessions", () => {
+  const s = sample();
+  const c = M.addClass(s, { name: "Lớp 8", price: 300000, days: [4], startDate: "2026-10-01", students: ["Lan"] });
+  eq(M.generate(s, TODAY), 2); // 01/10 and 08/10 are Thứ 5
+  eq(M.slip(s, s.students.find((x) => x.classId === c.id).id, "2026-10", TODAY).total, 600000);
+});
+
+test("delete student removes their absences; delete class removes everything", () => {
+  const s = sample();
+  const l7 = cls(s, "Lớp 7");
+  const linh = stu(s, "Khánh Linh");
+  M.toggleAbsent(s, l7.id, "2026-10-09", linh.id, TODAY);
+  M.deleteStudent(s, linh.id);
+  eq(M.sessionAt(s, l7.id, "2026-10-09").absent, []);
+  M.deleteClass(s, l7.id);
+  eq(s.sessions.every((x) => x.classId !== l7.id), true);
+  eq(s.students.every((x) => x.classId !== l7.id), true);
+});
+
+test("validation messages", () => {
+  eq(M.classNameError("lớp 6", ["Lớp 6"]), "Đã có Lớp 6. Đặt tên khác, ví dụ lớp 6 tối, hoặc đổi tên Lớp 6 trước.");
+  eq(M.classNameError("", []), "");
+  eq(M.classNameError("Lớp 8", ["Lớp 6"]), null);
+  eq(M.studentNameError("gia huy", "Lớp 6", ["Gia Huy"]), "Lớp 6 đã có gia huy. Thêm chữ để phân biệt, ví dụ gia huy B.");
+  eq(M.priceError(999), "Nhập học phí từ 1.000đ đến 10.000.000đ");
+  eq(M.priceError(250000), null);
+});
+
+test("G3: backup reminder rules", () => {
+  const s = sample();
+  eq(M.shouldRemindBackup(s, TODAY), null);
+  eq(M.shouldRemindBackup(s, "2026-10-27"), "Chưa sao lưu dữ liệu lần nào.");
+  s.meta.lastBackup = "2026-09-11";
+  eq(M.shouldRemindBackup(s, TODAY), "Đã 32 ngày chưa sao lưu dữ liệu.");
+  s.meta.snoozeUntil = "2026-10-20";
+  eq(M.shouldRemindBackup(s, TODAY), null);
+});
+
+test("G1/G2: backup round trip, then generation fills the gap", () => {
+  const s = sample();
+  M.toggleAbsent(s, cls(s, "Lớp 7").id, "2026-10-09", stu(s, "Khánh Linh").id, TODAY);
+  const r = M.readBackup(M.backupText(s, TODAY));
+  eq(r.error, undefined);
+  eq(r.summary, { classes: 2, students: 5, sessions: 4 });
+  eq(r.state.meta.lastBackup, TODAY);
+  eq(M.generate(r.state, "2026-10-20"), 2);
+  eq(M.slip(r.state, stu(r.state, "Khánh Linh").id, "2026-10", TODAY).count, 1);
+  const added = M.addStudent(r.state, r.state.classes[0].id, "Mới", TODAY);
+  eq(added.id, "hs8", "ids continue after restore");
+});
+
+test("G2: wrong files are rejected", () => {
+  eq(M.readBackup("not json").error, M.BAD_FILE);
+  eq(M.readBackup('{"hello":1}').error, M.BAD_FILE);
+  eq(M.readBackup(JSON.stringify({ app: "so-hoc-phi", data: { classes: [{ id: 1 }] } })).error, M.BAD_FILE);
+});
+
+test("G2: single-class file goes into 'Lớp của cô'", () => {
+  const v1 = { app: "so-hoc-phi", v: 1, savedAt: "2026-10-10", data: {
+    settings: { price: 200000, days: [2, 5], startDate: "2026-10-01", slipTitle: "Cô Hà" },
+    students: [{ id: "1", name: "An", from: "2026-10-01" }],
+    sessions: [{ date: "2026-10-02", price: 200000, absent: [] }, { date: "2026-10-06", price: 200000, absent: ["1"] }],
+  } };
+  const r = M.readBackup(JSON.stringify(v1));
+  eq(r.error, undefined);
+  eq(r.state.classes[0].name, "Lớp của cô");
+  eq(M.slip(r.state, "1", "2026-10", "2026-10-07").count, 1);
+});
+
+test("xlsx: valid zip structure", () => {
+  const bytes = buildXlsx([{ name: "Tổng hợp", rows: [["a", 1, { v: "b", bold: true }]] }, { name: "Lớp 6/A", rows: [] }]);
+  eq([bytes[0], bytes[1], bytes[2], bytes[3]], [0x50, 0x4b, 3, 4]);
+  const tail = bytes.slice(-22);
+  eq([tail[0], tail[1], tail[2], tail[3]], [0x50, 0x4b, 5, 6]);
+  eq(tail[8], 7, "7 files");
+});
+
+const failed = results.filter((r) => r[0] === "fail");
+const out = document.getElementById("out");
+out.innerHTML = results.map(([k, n]) => `<span class="${k}">${k === "pass" ? "✓" : "✗"} ${n}</span>`).join("\n") +
+  `\n\n${results.length - failed.length}/${results.length} passed`;
+document.title = failed.length ? `FAIL ${failed.length}` : `PASS ${results.length}`;
+
+// The sample month as a real file, base64, so the file can be checked outside the browser.
+{
+  const s = sample();
+  M.toggleAbsent(s, cls(s, "Lớp 7").id, "2026-10-09", stu(s, "Khánh Linh").id, TODAY);
+  const bytes = buildXlsx(monthSheets(s, "2026-10", TODAY).sheets);
+  const pre = document.createElement("pre");
+  pre.id = "xlsx";
+  pre.textContent = btoa(String.fromCharCode(...bytes));
+  document.body.append(pre);
+}
+document.body.dataset.done = "1";
+</script>
+</body>
+</html>

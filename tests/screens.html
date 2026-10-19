@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="vi">
+<head><meta charset="utf-8"><title>Sổ học phí · screens</title>
+<style>
+body { margin: 0; padding: 10px; display: flex; flex-wrap: wrap; gap: 10px; background: #77738a; font: 12px system-ui; }
+figure { margin: 0; display: grid; gap: 4px; }
+figcaption { color: #fff; font-weight: 600; }
+figcaption.err { color: #ffd0d0; }
+iframe { width: 390px; height: 844px; border: 0; background: #fff; border-radius: 18px; }
+</style></head>
+<body>
+<script type="module">
+// Drives the real app in iframes at iPhone size with a fixed "today". Open with ?g=1 (or 2, 3...) to render one group.
+// Each scenario seeds localStorage, loads index.html, then clicks through the screen it shows.
+import * as M from "../js/model.js";
+
+const html = await (await fetch("../index.html")).text();
+const base = new URL("../", location.href).href;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function sample(today = "2026-10-13") {
+  const s = M.emptyState("2026-10-01");
+  s.settings.slipTitle = "Lớp Toán cô Phượng";
+  M.addClass(s, { name: "Lớp 6", price: 250000, days: [2], startDate: "2026-10-01", students: ["Minh An", "Gia Huy"] });
+  M.addClass(s, { name: "Lớp 7", price: 250000, days: [5], startDate: "2026-10-01", students: ["Bảo Ngọc", "Khánh Linh", "Thảo Vy"] });
+  M.generate(s, today);
+  M.toggleAbsent(s, s.classes[1].id, "2026-10-09", s.students.find((x) => x.name === "Khánh Linh").id, today);
+  s.meta.lastBackup = "2026-10-10";
+  return s;
+}
+
+const S = [
+  // group 1: setup
+  { g: 1, name: "A2 · lớp đầu tiên", steps: async ({ type, click }) => { await type('[data-f="name"]', "Lớp 6"); await type('[data-f="price"]', "250000"); await click('[data-act="day"]', "T3"); } },
+  { g: 1, name: "A3 · học sinh, tên trùng", steps: async ({ type, click, doc }) => {
+    await type('[data-f="name"]', "Lớp 6"); await type('[data-f="price"]', "250000"); await click('[data-act="day"]', "T3"); await click('[data-act="setupClassNext"]');
+    for (const n of ["Minh An", "Gia Huy"]) { await type('[data-f="tagInput"]', n); doc.querySelector("form").requestSubmit(); await sleep(60); }
+    await type('[data-f="tagInput"]', "gia huy");
+  } },
+  { g: 1, name: "A4 · xem lại 2 lớp", steps: async ({ type, click, doc }) => {
+    const addClass = async (name, day, kids) => {
+      await type('[data-f="name"]', name); await type('[data-f="price"]', "250000"); await click('[data-act="day"]', day); await click('[data-act="setupClassNext"]');
+      for (const n of kids) { await type('[data-f="tagInput"]', n); doc.querySelector("form").requestSubmit(); await sleep(60); }
+      await click('[data-act="setupStudentsNext"]');
+    };
+    await addClass("Lớp 6", "T3", ["Minh An", "Gia Huy"]);
+    await click('[data-act="setupAddAnother"]');
+    await addClass("Lớp 7", "T6", ["Bảo Ngọc", "Khánh Linh", "Thảo Vy"]);
+  } },
+  { g: 1, name: "A5 · vào app", steps: async ({ type, click, doc }) => {
+    await type('[data-f="name"]', "Lớp 6"); await type('[data-f="price"]', "250000"); await click('[data-act="day"]', "T3"); await click('[data-act="setupClassNext"]');
+    await type('[data-f="tagInput"]', "Minh An"); doc.querySelector("form").requestSubmit(); await sleep(60);
+    await click('[data-act="setupStudentsNext"]'); await click('[data-act="setupFinish"]');
+  } },
+
+  // group 2: today
+  { g: 2, name: "B1 · hôm nay có buổi", state: sample },
+  { g: 2, name: "B2 · chạm em nghỉ", state: sample, steps: async ({ click }) => click('[data-act="toggle"]', "Gia Huy") },
+  { g: 2, name: "B4 · huỷ buổi", state: sample, steps: async ({ click }) => click('[data-act="confirm"]') },
+  { g: 2, name: "B3 · ngày không có lịch", date: "2026-10-14", state: () => sample("2026-10-14") },
+
+  // group 3: calendar and slips
+  { g: 3, name: "C1 · ngày đã học", state: sample, steps: async ({ click }) => { await click('[data-act="tab"]', "Lịch"); await click('[data-act="pick"][data-d="2026-10-09"]'); } },
+  { g: 3, name: "C2 · thêm buổi ngoài lịch", state: sample, steps: async ({ click }) => { await click('[data-act="tab"]', "Lịch"); await click('[data-act="pick"][data-d="2026-10-12"]'); } },
+  { g: 3, name: "C3 · báo nghỉ trước", state: sample, steps: async ({ click }) => { await click('[data-act="tab"]', "Lịch"); await click('[data-act="pick"][data-d="2026-10-16"]'); await click('[data-act="toggle"]', "Bảo Ngọc"); } },
+  { g: 3, name: "D1 · phiếu Khánh Linh", state: sample, steps: async ({ click }) => { await click('[data-act="tab"]', "Phiếu"); await click('[data-act="slipClass"]', "Lớp 7"); await click('[data-act="slipStudent"]', "Khánh Linh"); } },
+
+  // group 4: settings
+  { g: 4, name: "E1 · cài đặt", state: sample, steps: async ({ click }) => click('[data-act="tab"]', "Cài đặt") },
+  { g: 4, name: "E3 · trang lớp", state: sample, steps: async ({ click }) => { await click('[data-act="tab"]', "Cài đặt"); await click('[data-page="classes"]'); await click('[data-page="class"]', "Lớp 7"); } },
+  { g: 4, name: "E5 · sửa học sinh", state: sample, steps: async ({ click, type }) => { await click('[data-act="tab"]', "Cài đặt"); await click('[data-page="classes"]'); await click('[data-page="class"]', "Lớp 7"); await click('[data-page="student"]', "Thảo Vy"); await type('[data-f="until"]', "2026-09-01"); } },
+  { g: 4, name: "F1 · học phí từ ngày cũ", state: sample, steps: async ({ click, type }) => { await click('[data-act="tab"]', "Cài đặt"); await click('[data-page="classes"]'); await click('[data-page="class"]', "Lớp 6"); await click('[data-page="price"]'); await type('[data-f="price"]', "280000"); await type('[data-f="from"]', "2026-10-06"); } },
+
+  // group 5: schedule and backup
+  { g: 5, name: "F2 · đổi lịch, hỏi lại", state: () => { const s = sample(); M.toggleAbsent(s, s.classes[1].id, "2026-10-16", s.students.find((x) => x.name === "Bảo Ngọc").id, "2026-10-13"); return s; },
+    steps: async ({ click }) => { await click('[data-act="tab"]', "Cài đặt"); await click('[data-page="classes"]'); await click('[data-page="class"]', "Lớp 7"); await click('[data-page="days"]'); await click('[data-act="day"]', "T3"); await click('[data-act="day"]', "T6"); await click('[data-act="saveDays"]'); } },
+  { g: 5, name: "G3 · nhắc sao lưu", state: () => { const s = sample(); s.meta.lastBackup = "2026-09-11"; return s; } },
+  { g: 5, name: "G1 · sao lưu", state: sample, steps: async ({ click }) => { await click('[data-act="tab"]', "Cài đặt"); await click('[data-page="backup"]'); } },
+  { g: 5, name: "G2 · khôi phục", state: sample, steps: async ({ win }) => {
+    const text = win.__shp.M.backupText(win.__shp.state, "2026-10-10");
+    const dt = new win.DataTransfer(); dt.items.add(new win.File([text], "so-hoc-phi-2026-10-10.json"));
+    const input = win.document.getElementById("file"); input.files = dt.files; input.dispatchEvent(new win.Event("change")); await sleep(200);
+  } },
+
+  // group 6: whole flows that end somewhere else
+  { g: 6, name: "E2 → thêm Lớp 8 từ 01/10", state: sample, steps: async ({ click, type, doc }) => {
+    await click('[data-act="tab"]', "Cài đặt"); await click('[data-page="classes"]'); await click('[data-act="addClass"]');
+    await type('[data-f="name"]', "Lớp 8"); await type('[data-f="price"]', "300000"); await click('[data-act="day"]', "T5"); await click('[data-act="setupClassNext"]');
+    await type('[data-f="tagInput"]', "Lan"); doc.querySelector("form").requestSubmit(); await sleep(60);
+    await click('[data-act="setupStudentsNext"]'); await type('[data-f="startDate"]', "2026-10-01"); await click('[data-act="setupAddFinish"]');
+  } },
+  { g: 6, name: "E3 · ngừng dạy, đổi tên", state: sample, steps: async ({ click, type }) => {
+    await click('[data-act="tab"]', "Cài đặt"); await click('[data-page="classes"]'); await click('[data-page="class"]', "Lớp 7");
+    await click('[data-page="rename"]'); await type('[data-f="name"]', "Lớp 6"); await type('[data-f="name"]', "Lớp 8"); await click('[data-act="saveRename"]');
+    await click('[data-act="confirm"][data-key="stop"]'); await type('[data-f="stopFrom"]', "2026-10-14"); await click('[data-act="stopClass"]');
+  } },
+  { g: 6, name: "G2 → khôi phục xong", state: sample, steps: async ({ win, click }) => {
+    const s = structuredClone(win.__shp.state); s.classes[0].name = "Lớp từ file";
+    const text = win.__shp.M.backupText(s, "2026-10-10");
+    const dt = new win.DataTransfer(); dt.items.add(new win.File([text], "so-hoc-phi-2026-10-10.json"));
+    const input = win.document.getElementById("file"); input.files = dt.files; input.dispatchEvent(new win.Event("change")); await sleep(200);
+    await click('[data-act="doRestore"]');
+  } },
+  { g: 6, name: "Phiếu · 2 mức giá", state: () => { const s = sample(); M.setPrice(s, s.classes[0].id, "2026-10-10", 280000); return s; }, steps: async ({ click }) => click('[data-act="tab"]', "Phiếu") },
+];
+
+const g = new URLSearchParams(location.search).get("g");
+for (const sc of S.filter((x) => !g || String(x.g) === g)) {
+  localStorage.clear();
+  if (sc.state) localStorage.setItem("so-hoc-phi", JSON.stringify(sc.state()));
+  const [y, m, d] = (sc.date ?? "2026-10-13").split("-").map(Number);
+  const fake = `<script>(()=>{const R=Date,F=new R(${y},${m - 1},${d},9,0,0).getTime();class FD extends R{constructor(...a){a.length?super(...a):super(F)}static now(){return F}}window.Date=FD;})()<\/script>`;
+  const fig = document.createElement("figure");
+  const cap = document.createElement("figcaption");
+  cap.textContent = sc.name;
+  const f = document.createElement("iframe");
+  f.srcdoc = html.replace("<head>", `<head><base href="${base}">${fake}`);
+  fig.append(cap, f);
+  document.body.append(fig);
+  await new Promise((r) => (f.onload = r));
+  await sleep(400);
+  const doc = f.contentDocument;
+  const click = async (sel, text) => {
+    const find = () => [...doc.querySelectorAll(sel)].find((e) => !text || e.textContent.includes(text));
+    for (let i = 0; i < 20 && !find(); i++) await sleep(100);
+    const el = find();
+    if (!el) throw new Error(`not found: ${sel} ${text ?? ""}`);
+    el.click();
+    await sleep(80);
+  };
+  const type = async (sel, value) => {
+    const el = doc.querySelector(sel);
+    if (!el) throw new Error(`not found: ${sel}`);
+    el.value = value;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    await sleep(50);
+  };
+  try {
+    await sc.steps?.({ click, type, doc, win: f.contentWindow });
+  } catch (e) {
+    cap.textContent += ` · LỖI: ${e.message}`;
+    cap.className = "err";
+  }
+  doc.getElementById("toast")?.setAttribute("data-keep", "1");
+}
+document.body.dataset.done = "1";
+</script>
+</body>
+</html>

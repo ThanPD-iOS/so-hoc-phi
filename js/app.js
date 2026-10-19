@@ -516,6 +516,9 @@ function settingsView() {
         <button data-act="pickFile"><span>Khôi phục từ file</span></button>
         <button data-act="open" data-page="install"><span>Cách cài lên màn hình chính</span></button>
       </div>
+      <div class="list">
+        <button data-act="open" data-page="guide"><span>Hướng dẫn sử dụng</span></button>
+      </div>
       <div class="sp"></div>
       <p class="hint center">Dữ liệu chỉ nằm trên máy này · Phiên bản ${APP_VERSION}</p>`,
     tabs: true,
@@ -523,7 +526,7 @@ function settingsView() {
 }
 
 function pageView(page) {
-  const views = { classes: classesPage, class: classPage, rename: renamePage, addStudent: addStudentPage, student: studentPage, price: pricePage, days: daysPage, backup: backupPage, install: () => ({ html: installHtml(false) }) };
+  const views = { classes: classesPage, class: classPage, rename: renamePage, addStudent: addStudentPage, student: studentPage, price: pricePage, days: daysPage, backup: backupPage, install: () => ({ html: installHtml(false) }), guide: guidePage };
   const v = views[page.type](page);
   return { ...v, tabs: true };
 }
@@ -726,6 +729,58 @@ function daysPage(page) {
       setErr("days", f.days.length ? null : "Chọn ít nhất một ngày trong tuần");
       setOk(f.days.length > 0 && !same);
     },
+  };
+}
+
+// Hướng dẫn sử dụng: the same content as the user guide doc, one tap-to-open section per topic.
+const GUIDE = [
+  ["Điểm danh mỗi buổi (tab Hôm nay)", `
+    <p>Cả lớp mặc định có mặt, chỉ cần chạm vào em nghỉ. Không có nút Lưu: chạm là lưu ngay.</p>
+    <ol><li>Mở app, tab Hôm nay hiện sẵn thẻ của lớp có lịch học hôm nay. Hai lớp cùng ngày thì có hai thẻ.</li>
+    <li>Chạm vào tên em nghỉ có phép. Tên bị gạch, buổi này không tính tiền em đó.</li>
+    <li>Chạm nhầm thì chạm lại lần nữa để bỏ.</li></ol>
+    <p><b>Huỷ buổi</b> (nghỉ lễ, cô bận): bấm Huỷ buổi này ở cuối thẻ rồi xác nhận. <b>Dạy thêm hôm nay</b>: bấm nút + tên lớp.</p>
+    <p>Quên mở app vài hôm cũng không sao: các buổi đúng lịch vẫn tự được tạo, cả lớp có mặt.</p>`],
+  ["Sửa ngày khác (tab Lịch)", `
+    <p>Chạm một ngày trên lịch, thẻ điểm danh hiện bên dưới, dùng giống tab Hôm nay. Sửa được cả các tháng trước.</p>
+    <p>Ô tím: đã học. Ô viền đứt: sắp học. Chấm đỏ: có em nghỉ.</p>
+    <ul><li><b>Báo nghỉ trước:</b> chạm ngày sắp tới, chạm tên em.</li>
+    <li><b>Dạy bù ngoài lịch:</b> chạm ngày đó, bấm + tên lớp.</li>
+    <li><b>Nghỉ lễ, Tết:</b> chạm ngày đó, bấm Huỷ buổi này. Huỷ nhầm thì bấm Thêm lại buổi này.</li></ul>`],
+  ["Cuối tháng: gửi phiếu (tab Phiếu)", `
+    <ol><li>Mở tab Phiếu. Từ ngày 1 đến ngày 7 app tự mở tháng trước.</li>
+    <li>Chạm tên lớp, rồi chạm tên em.</li>
+    <li>Chụp màn hình (nút nguồn + tăng âm lượng), cắt lấy phần phiếu, gửi Zalo cho phụ huynh.</li></ol>
+    <p>Bấm <b>Xuất Excel</b> để lưu cả tháng vào Tệp hoặc gửi Zalo cho chính mình. Dòng đầu phiếu sửa ở Cài đặt → Tên trên phiếu.</p>`],
+  ["Lớp và học sinh", `
+    <p>Vào Cài đặt → Lớp học → chạm tên lớp. Mọi thay đổi tính theo ngày nên tiền các tháng cũ không đổi.</p>
+    <ul><li><b>Em mới:</b> + Thêm học sinh, chọn ngày bắt đầu học.</li>
+    <li><b>Em nghỉ hẳn:</b> chạm tên em, chọn Nghỉ học từ ngày. Học lại thì xoá ngày này.</li>
+    <li><b>Chuyển lớp:</b> cho em nghỉ ở lớp cũ từ ngày chuyển, rồi thêm em vào lớp mới từ ngày đó.</li>
+    <li><b>Mở thêm lớp:</b> Lớp học → + Thêm lớp, rồi chọn ngày bắt đầu tính tiền.</li>
+    <li><b>Thôi dạy:</b> Ngừng dạy lớp này, phiếu cũ vẫn còn.</li>
+    <li><b>Năm học mới:</b> đổi tên từ lớp cao nhất trước (Lớp 7 thành Lớp 8, rồi Lớp 6 thành Lớp 7).</li></ul>
+    <p>Xoá hẳn chỉ dùng khi nhập nhầm, không lấy lại được.</p>`],
+  ["Đổi học phí, lịch học", `
+    <p><b>Học phí:</b> trang lớp → Học phí, gõ giá mới, chọn Áp dụng từ ngày. Tăng giá từ tháng sau thì chọn ngày 01 tháng sau, các buổi trước vẫn giữ giá cũ.</p>
+    <p><b>Lịch học:</b> trang lớp → Lịch học, chạm lại các thứ. Áp dụng từ hôm nay, buổi đã học không đổi.</p>`],
+  ["Sao lưu, đổi điện thoại", `
+    <p>Xoá app hoặc đổi máy là mất dữ liệu, nên cần file sao lưu. App nhắc khi đã 30 ngày chưa sao lưu.</p>
+    <ol><li><b>Sao lưu:</b> Cài đặt → Sao lưu dữ liệu → Tạo file sao lưu, chọn Lưu vào Tệp hoặc gửi Zalo cho chính mình.</li>
+    <li><b>Máy mới:</b> cài app, bấm Khôi phục ở màn thiết lập, chọn file sao lưu.</li></ol>`],
+  ["Câu hỏi thường gặp", `
+    <ul><li><b>Lỡ xoá app?</b> Cài lại rồi khôi phục từ file sao lưu gần nhất.</li>
+    <li><b>Báo "Không lưu được"?</b> Điện thoại đầy bộ nhớ, xoá bớt ảnh hoặc ứng dụng.</li>
+    <li><b>Thấy giao diện cũ?</b> Đóng hẳn app rồi mở lại.</li>
+    <li><b>Dữ liệu có lên mạng không?</b> Không, chỉ nằm trên iPhone này và file sao lưu cô tự lưu.</li></ul>`],
+];
+
+function guidePage() {
+  return {
+    html: `
+      ${back("Cài đặt")}<h1>Hướng dẫn sử dụng</h1>
+      <p class="hint">Chạm vào một mục để xem.</p>
+      ${GUIDE.map(([title, body]) => `<details class="guide"><summary>${title}</summary><div>${body}</div></details>`).join("")}`,
   };
 }
 

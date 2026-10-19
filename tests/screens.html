@@ -101,6 +101,8 @@ const S = [
     const input = win.document.getElementById("file"); input.files = dt.files; input.dispatchEvent(new win.Event("change")); await sleep(200);
     await click('[data-act="doRestore"]');
   } },
+  { g: 7, name: "E1 · có mục Hướng dẫn", state: sample, steps: async ({ click }) => click('[data-act="tab"]', "Cài đặt") },
+  { g: 7, name: "Hướng dẫn · mở một mục", state: sample, steps: async ({ click, doc }) => { await click('[data-act="tab"]', "Cài đặt"); await click('[data-page="guide"]'); doc.querySelector("details.guide").open = true; } },
   { g: 6, name: "Phiếu · 2 mức giá", state: () => { const s = sample(); M.setPrice(s, s.classes[0].id, "2026-10-10", 280000); return s; }, steps: async ({ click }) => click('[data-act="tab"]', "Phiếu") },
 ];
 
